@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Laplace & Inverse Laplace Calculator</title>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+body { font-family: Arial, sans-serif; margin: 20px; background: #0f172a; color: #e5e7eb; }
+.term { margin-bottom: 10px; padding: 10px; border: 1px solid #374151; border-radius: 8px; background:#111827; }
+select, input { margin: 5px; padding: 5px; border-radius:5px; border:1px solid #374151; background:#1f2937; color:#e5e7eb; }
+button { margin: 10px 0; padding: 6px 12px; border-radius: 6px; border: none; background: #22d3ee; color: #002733; cursor: pointer; }
+button:hover { background: #0bc5ea; }
+h2 { margin-top: 30px; }
+.result { margin-top: 10px; padding:10px; border:1px dashed #374151; border-radius:8px; background:#0b1220; }
+.factor { margin-left:20px; }
+</style>
+</head>
+<body>
+<h1>Laplace & Inverse Laplace Calculator</h1>
+
+<h2>Laplace Transform</h2>
+<div id="laplace-terms"></div>
+<button onclick="addLaplaceTerm()">+ Add Term</button>
+<button onclick="calculateLaplace()">Compute Laplace</button>
+<div id="laplace-result" class="result"></div>
+
+<h2>Inverse Laplace Transform</h2>
+<div id="inverse-terms"></div>
+<button onclick="addInverseTerm()">+ Add Term</button>
+<button onclick="calculateInverse()">Compute Inverse Laplace</button>
+<div id="inverse-result" class="result"></div>
+
+<script>
+// Factorial helper
+function factorial(n){let r=1;for(let i=2;i<=n;i++)r*=i;return r;}
+
+// Laplace templates
+const laplaceFunctions = {
+  "1": (C)=> `${C}/s`,
+  "t^n": (C, a, b, n)=> `${C}*${factorial(n)}/s^${n+1}`,
+  "e^(at)": (C, a)=> `${C}/(s-${a})`,
+  "sin(bt)": (C,a,b)=> `${C* b}/(s^2+${b*b})`,
+  "cos(bt)": (C,a,b)=> `${C}*s/(s^2+${b*b})`,
+  "sinh(at)": (C,a)=> `${C}*${a}/(s^2-${a*a})`,
+  "cosh(at)": (C,a)=> `${C}*s/(s^2-${a*a})`,
+  "t^n*e^(at)": (C,a,b,n)=> `${C}*${factorial(n)}/((s-${a})^${n+1})`,
+  "t*sin(bt)": (C,a,b)=> `${C*2*b*s}/((s^2+${b*b})^2)`,
+  "t*cos(bt)": (C,a,b)=> `${C}*(s^2-${b*b})/((s^2+${b*b})^2)`,
+  "partial": (C,factors)=> {
+    // factors: array of {C, a} for each (s-a) term
+    return factors.map(f=>`${f.C}/(s-${f.a})`).join(" + ");
+  }
+};
+
+// Inverse Laplace templates
+const inverseFunctions = {
+  "1/s": (C)=> `${C}`,
+  "1/(s-a)": (C,a)=> `${C}e^{${a}t}`,
+  "n!/s^(n+1)": (C,a,b,n)=> `${C}*t^${n}`,
+  "s/(s^2+b^2)": (C,a,b)=> `${C}cos(${b}t)`,
+  "b/(s^2+b^2)": (C,a,b)=> `${C}sin(${b}t)`,
+  "1/(s^2-a^2)": (C,a)=> `${C}*sinh(${a}t)/${a}`,
+  "s/(s^2-a^2)": (C,a)=> `${C}*cosh(${a}t)`,
+  "n!/((s-a)^(n+1))": (C,a,b,n)=> `${C}*t^${n-1}*e^{${a}t}/${n-1}!`,
+  "2b*s/(s^2+b^2)^2": (C,a,b)=> `${C}*t*sin(${b}t)`,
+  "(s^2-b^2)/(s^2+b^2)^2": (C,a,b)=> `${C}*t*cos(${b}t)`
+};
+
+// Add Laplace term
+function addLaplaceTerm(){
+  const div=document.createElement("div");
+  div.className="term";
+  div.innerHTML=`
+    Type: <select class="type">
+      ${Object.keys(laplaceFunctions).map(k=>`<option value="${k}">${k}</option>`).join('')}
+    </select>
+    C: <input type="number" value="1" class="C">
+    a: <input type="number" value="1" class="a">
+    b: <input type="number" value="1" class="b">
+    n: <input type="number" value="1" class="n">
+    <div class="factor-container"></div>
+    <button type="button" onclick="addFactor(this)">+ Add Factor (for partial)</button>
+  `;
+  document.getElementById("laplace-terms").appendChild(div);
+}
+
+// Add factor input for partial fraction
+function addFactor(btn){
+  const container=btn.parentElement.querySelector(".factor-container");
+  const div=document.createElement("div");
+  div.className="factor";
+  div.innerHTML=`C: <input type="number" value="1" class="fC"> a: <input type="number" value="0" class="fa">`;
+  container.appendChild(div);
+}
+
+// Add Inverse Laplace term
+function addInverseTerm(){
+  const div=document.createElement("div");
+  div.className="term";
+  div.innerHTML=`
+    Type: <select class="type">
+      ${Object.keys(inverseFunctions).map(k=>`<option value="${k}">${k}</option>`).join('')}
+    </select>
+    C: <input type="number" value="1" class="C">
+    a: <input type="number" value="1" class="a">
+    b: <input type="number" value="1" class="b">
+    n: <input type="number" value="1" class="n">
+  `;
+  document.getElementById("inverse-terms").appendChild(div);
+}
+
+// Compute Laplace
+function calculateLaplace(){
+  const terms=document.querySelectorAll("#laplace-terms .term");
+  const results=[];
+  terms.forEach(term=>{
+    let type=term.querySelector(".type").value;
+    if(type==="partial"){
+      // gather factors
+      const factors=[];
+      term.querySelectorAll(".factor").forEach(f=>{
+        factors.push({C:parseFloat(f.querySelector(".fC").value), a:parseFloat(f.querySelector(".fa").value)});
+      });
+      results.push(laplaceFunctions[type](1,factors));
+    } else{
+      let C=parseFloat(term.querySelector(".C").value);
+      let a=parseFloat(term.querySelector(".a").value);
+      let b=parseFloat(term.querySelector(".b").value);
+      let n=parseInt(term.querySelector(".n").value);
+      results.push(laplaceFunctions[type](C,a,b,n));
+    }
+  });
+  document.getElementById("laplace-result").innerHTML = "$$" + results.join(" + ") + "$$";
+  MathJax.typeset();
+}
+
+// Compute Inverse Laplace
+function calculateInverse(){
+  const terms=document.querySelectorAll("#inverse-terms .term");
+  const results=[];
+  terms.forEach(term=>{
+    let C=parseFloat(term.querySelector(".C").value);
+    let type=term.querySelector(".type").value;
+    let a=parseFloat(term.querySelector(".a").value);
+    let b=parseFloat(term.querySelector(".b").value);
+    let n=parseInt(term.querySelector(".n").value);
+    results.push(inverseFunctions[type](C,a,b,n));
+  });
+  document.getElementById("inverse-result").innerHTML = "$$" + results.join(" + ") + "$$";
+  MathJax.typeset();
+}
+</script>
+</body>
+</html>
