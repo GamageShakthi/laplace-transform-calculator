@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Laplace & Inverse Laplace Calculator</title>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+  :root {
+    --bg: #000000;
+    --card: #111111;
+    --text: #e5e7eb;
+    --accent: #22d3ee;
+    --border: #333333;
+    --button-hover: linear-gradient(45deg, #22d3ee, #0bc5ea);
+    --card-hover: linear-gradient(145deg, #1a1a1a, #222222);
+  }
+  body { margin:0; font-family: Arial,sans-serif; background: var(--bg); color: var(--text); padding: 20px; font-weight: bold; }
+  h1 { text-align:center; margin-bottom: 30px; font-size: 2em; }
+  .card { background: var(--card); border-radius: 16px; padding: 25px; margin-bottom: 30px; box-shadow: 0 5px 20px rgba(0,0,0,0.8); transition: background 0.3s ease, transform 0.3s ease; }
+  .card:hover { background: var(--card-hover); transform: translateY(-3px); }
+  .card h2 { margin-top:0; font-size:1.5em; }
+  .term { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px; align-items:center; }
+  .input-box { display:flex; flex-direction:column; align-items:center; background:#222; padding:6px; border-radius:6px; border:1px solid var(--border); width:70px; }
+  .input-box label { font-weight:bold; font-size:0.9em; margin-bottom:2px; }
+  .input-box input, .input-box select { width:60px; background:#111; color:var(--text); border:none; border-radius:4px; padding:4px; font-weight:bold; text-align:center; }
+  button { padding:8px 14px; border:none; border-radius:8px; background: var(--accent); color:#002733; cursor:pointer; font-weight:bold; margin-top:10px; transition: background 0.3s ease, transform 0.2s ease; }
+  button:hover { background: var(--button-hover); transform: translateY(-2px); }
+  .result { margin-top:15px; padding:12px; border:1px dashed var(--border); border-radius:10px; background:#0b0b0b; min-height:35px; font-weight:bold; word-wrap: break-word; }
+</style>
+</head>
+<body>
+<h1>Laplace & Inverse Laplace Calculator</h1>
+
+<div class="card" id="laplace-card">
+  <h2>Laplace Transform</h2>
+  <div id="laplace-terms"></div>
+  <button onclick="addLaplaceTerm()">+ Add Term</button>
+  <button onclick="calculateLaplace()">Compute Laplace</button>
+  <div id="laplace-result" class="result"></div>
+</div>
+
+<div class="card" id="inverse-card">
+  <h2>Inverse Laplace Transform</h2>
+  <div id="inverse-terms"></div>
+  <button onclick="addInverseTerm()">+ Add Term</button>
+  <button onclick="calculateInverse()">Compute Inverse Laplace</button>
+  <div id="inverse-result" class="result"></div>
+</div>
+
+<script>
+function factorial(n){let r=1;for(let i=2;i<=n;i++)r*=i;return r;}
+
+const laplaceFunctions = {
+  "1": {fn:(C)=> `${C}/s`, params:[]},
+  "t^n": {fn:(C,a,b,n)=> `${C}*${factorial(n)}/s^${n+1}`, params:['n']},
+  "e^(at)": {fn:(C,a)=> `${C}/(s-${a})`, params:['a']},
+  "sin(bt)": {fn:(C,a,b)=> `${C* b}/(s^2+${b*b})`, params:['b']},
+  "cos(bt)": {fn:(C,a,b)=> `${C}*s/(s^2+${b*b})`, params:['b']},
+  "sinh(at)": {fn:(C,a)=> `${C}*${a}/(s^2-${a*a})`, params:['a']},
+  "cosh(at)": {fn:(C,a)=> `${C}*s/(s^2-${a*a})`, params:['a']},
+  "t^n*e^(at)": {fn:(C,a,b,n)=> `${C}*${factorial(n)}/((s-${a})^${n+1})`, params:['n','a']},
+  "t*sin(bt)": {fn:(C,a,b)=> `${C*2*b*s}/((s^2+${b*b})^2)`, params:['b']},
+  "t*cos(bt)": {fn:(C,a,b)=> `${C}*(s^2-${b*b})/((s^2+${b*b})^2)`, params:['b']}
+};
+
+const inverseFunctions = {
+  "1/s": {fn:(C)=> `${C}`, params:[]},
+  "1/(s-a)": {fn:(C,a)=> `${C}e^{${a}t}`, params:['a']},
+  "n!/s^(n+1)": {fn:(C,a,b,n)=> `${C}*t^${n}`, params:['n']},
+  "s/(s^2+b^2)": {fn:(C,a,b)=> `${C}cos(${b}t)`, params:['b']},
+  "b/(s^2+b^2)": {fn:(C,a,b)=> `${C}sin(${b}t)`, params:['b']},
+  "1/(s^2-a^2)": {fn:(C,a)=> `${C}*sinh(${a}t)/${a}`, params:['a']},
+  "s/(s^2-a^2)": {fn:(C,a)=> `${C}*cosh(${a}t)`, params:['a']},
+  "n!/((s-a)^(n+1))": {fn:(C,a,b,n)=> `${C}*t^${n-1}*e^{${a}t}/${n-1}!`, params:['n','a']},
+  "2b*s/(s^2+b^2)^2": {fn:(C,a,b)=> `${C}*t*sin(${b}t)`, params:['b']},
+  "(s^2-b^2)/(s^2+b^2)^2": {fn:(C,a,b)=> `${C}*t*cos(${b}t)`, params:['b']}
+};
+
+function createTerm(templateList, containerId){
+  const div=document.createElement("div");
+  div.className="term";
+  div.innerHTML=`
+    <div class="input-box">
+      <label>Type</label>
+      <select class="type">${Object.keys(templateList).map(k=>`<option value="${k}">${k}</option>`).join('')}</select>
+    </div>
+    <div class="input-box">
+      <label>C</label>
+      <input type="number" value="1" class="C">
+    </div>
+    <div class="input-box a-box" style="display:none;">
+      <label>a</label>
+      <input type="number" class="a">
+    </div>
+    <div class="input-box b-box" style="display:none;">
+      <label>b</label>
+      <input type="number" class="b">
+    </div>
+    <div class="input-box n-box" style="display:none;">
+      <label>n</label>
+      <input type="number" class="n">
+    </div>
+  `;
+  containerId.appendChild(div);
+
+  const typeSelect = div.querySelector(".type");
+  const aBox = div.querySelector(".a-box");
+  const bBox = div.querySelector(".b-box");
+  const nBox = div.querySelector(".n-box");
+
+  function updateInputs(){
+    const sel = templateList[typeSelect.value].params;
+    aBox.style.display = sel.includes('a') ? 'flex' : 'none';
+    bBox.style.display = sel.includes('b') ? 'flex' : 'none';
+    nBox.style.display = sel.includes('n') ? 'flex' : 'none';
+  }
+
+  typeSelect.onchange=updateInputs;
+  updateInputs();
+}
+
+function addLaplaceTerm(){createTerm(laplaceFunctions, document.getElementById("laplace-terms"));}
+function addInverseTerm(){createTerm(inverseFunctions, document.getElementById("inverse-terms"));}
+
+function calculateLaplace(){
+  const terms=document.querySelectorAll("#laplace-terms .term");
+  const results=[];
+  terms.forEach(term=>{
+    const C=parseFloat(term.querySelector(".C").value);
+    const a=parseFloat(term.querySelector(".a")?.value || 0);
+    const b=parseFloat(term.querySelector(".b")?.value || 0);
+    const n=parseInt(term.querySelector(".n")?.value || 0);
+    const type=term.querySelector(".type").value;
+    results.push(laplaceFunctions[type].fn(C,a,b,n));
+  });
+  document.getElementById("laplace-result").innerHTML = "$$"+results.join(" + ")+"$$";
+  MathJax.typeset();
+}
+
+function calculateInverse(){
+  const terms=document.querySelectorAll("#inverse-terms .term");
+  const results=[];
+  terms.forEach(term=>{
+    const C=parseFloat(term.querySelector(".C").value);
+    const a=parseFloat(term.querySelector(".a")?.value || 0);
+    const b=parseFloat(term.querySelector(".b")?.value || 0);
+    const n=parseInt(term.querySelector(".n")?.value || 0);
+    const type=term.querySelector(".type").value;
+    results.push(inverseFunctions[type].fn(C,a,b,n));
+  });
+  document.getElementById("inverse-result").innerHTML = "$$"+results.join(" + ")+"$$";
+  MathJax.typeset();
+}
+
+// Initialize
+addLaplaceTerm();
+addInverseTerm();
+</script>
+</body>
+</html>
